@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js 太陽系模擬 (真3D視角)</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; }
+        .info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 12px;
+            font-family: sans-serif;
+            text-shadow: 0 0 5px black;
+        }
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(40, 40, 40, 0.7);
+            padding: 10px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            color: white;
+            font-size: 14px;
+            font-family: sans-serif;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .control-group {
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            border-right: 1px solid #555;
+        }
+        .control-group:last-child {
+            border-right: none;
+        }
+        .controls label { margin-right: 10px; }
+        .controls input[type="range"] { width: 150px; margin-right: 10px; }
+        .controls input[type="number"] {
+            width: 60px;
+            background-color: #333;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 4px;
+            padding: 2px 5px;
+        }
+        .controls button {
+            margin-left: 10px;
+            background-color: #555;
+            color: white;
+            border: 1px solid #777;
+            border-radius: 4px;
+            padding: 4px 10px;
+            cursor: pointer;
+        }
+        .controls button:hover { background-color: #666; }
+        
+        #labels-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        .label {
+            position: absolute;
+            color: white;
+            font-family: sans-serif;
+            font-size: 12px;
+            text-shadow: -1px 1px 1px #000;
+            transform: translate(-50%, -150%);
+            white-space: nowrap;
+        }
+
+        #info-panel {
+            position: absolute;
+            top: 20px;
+            right: -350px;
+            width: 300px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            border-left: 2px solid #888;
+            padding: 20px;
+            font-family: sans-serif;
+            transition: right 0.5s ease-in-out;
+            visibility: hidden;
+        }
+        #info-panel.visible {
+            right: 20px;
+            visibility: visible;
+        }
+        #info-panel h2 { margin-top: 0; }
+        #info-panel p { line-height: 1.6; }
+        #info-panel .close-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            cursor: pointer;
+            font-size: 20px;
+        }
+
+        .display-options {
+            position: absolute;
+            top: 100px;
+            left: 10px;
+            background-color: rgba(40, 40, 40, 0.7);
+            padding: 10px;
+            border-radius: 8px;
+            color: white;
+            font-size: 12px;
+        }
+        .display-options div {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .display-options label { margin-left: 5px; }
+
+        .planet-selector {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+        }
+        .planet-selector select {
+            background-color: rgba(40, 40, 40, 0.7);
+            color: white;
+            border: 1px solid #555;
+            border-radius: 4px;
+            padding: 5px;
+            font-size: 12px;
+        }
+        
+        .lang-switcher {
+            position: absolute;
+            top: 60px;
+            left: 10px;
+            background-color: rgba(40, 40, 40, 0.7);
+            padding: 5px;
+            border-radius: 8px;
+        }
+        .lang-switcher button {
+            background: none;
+            border: 1px solid transparent;
+            color: #888;
+            cursor: pointer;
+            padding: 5px;
+            font-size: 12px;
+        }
+        .lang-switcher button.active {
+            color: white;
+            border-color: white;
+            border-radius: 4px;
+        }
+
+
+        @media (max-width: 768px) {
+            .info { font-size: 10px; }
+            .controls { font-size: 12px; padding: 8px; flex-direction: column; }
+            .control-group { border-right: none; margin-top: 5px; }
+            .controls input[type="range"] { width: 120px; }
+            #info-panel { width: calc(100% - 40px); top: 60px; right: -100%; }
+            #info-panel.visible { right: 10px; }
+            .planet-selector { top: 60px; right: auto; left: 10px; }
+            .lang-switcher { top: 110px; }
+            .display-options { top: 160px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="info">
+        <p><b data-lang="desktopControls">桌面:</b> <span data-lang="desktopControlsText">左鍵拖曳=旋轉 | 右鍵拖曳=平移 | 滾輪=縮放</span></p>
+        <p><b data-lang="mobileControls">行動裝置:</b> <span data-lang="mobileControlsText">單指拖曳=旋轉 | 雙指拖曳=平移 | 雙指縮放</span></p>
+    </div>
+
+    <div class="controls">
+        <div class="control-group">
+            <label for="speedSlider" data-lang="speedLabel">速度:</label>
+            <input type="range" id="speedSlider" min="0.1" max="10" value="1" step="0.1">
+            <input type="number" id="speedInput" min="0.1" max="10" value="1" step="0.1">
+            <span>x</span>
+            <button id="pausePlayButton" data-lang="pause">暫停</button>
+        </div>
+        <div class="control-group">
+            <button id="resetButton" data-lang="reset">重設</button>
+        </div>
+    </div>
+    
+    <div id="labels-container"></div>
+    <div id="info-panel">
+        <span class="close-btn" id="close-panel-btn">&times;</span>
+        <h2 id="planet-name"></h2>
+        <p id="planet-fact1"></p>
+        <p id="planet-fact2"></p>
+        <p id="planet-fun-fact"></p>
+    </div>
+    <div class="display-options">
+        <div>
+            <input type="checkbox" id="toggle-trails" checked>
+            <label for="toggle-trails" data-lang="showTrails">顯示軌跡尾巴</label>
+        </div>
+        <div>
+            <input type="checkbox" id="toggle-full-orbits">
+            <label for="toggle-full-orbits" data-lang="showOrbits">顯示完整軌道</label>
+        </div>
+        <div>
+            <input type="checkbox" id="toggle-labels" checked>
+            <label for="toggle-labels" data-lang="showLabels">顯示名稱</label>
+        </div>
+    </div>
+    <div class="planet-selector">
+        <select id="planetSelect">
+            <option value="Sun" data-lang="selectBody">選擇一個天體...</option>
+        </select>
+    </div>
+    <div class="lang-switcher">
+        <button id="lang-zh" class="active">中文</button>
+        <button id="lang-en">English</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        // --- 核心常數 ---
+        const G = 6.67430e-11;
+        const AU = 1.496e11;
+        const SIM_SCALE = 25 / AU;
+        const BASE_TIMESTEP = 3600 * 24;
+        let timeMultiplier = 1;
+        let isPaused = false;
+        const BASE_CALCULATION_STEPS = 50;
+        let MAX_CALCULATION_STEPS = 4000;
+        const BASE_ORBIT_LENGTH = 500;
+        const isMobile = window.innerWidth <= 768;
+
+        // --- Three.js 初始化 ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1 / AU, 2000 * AU);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        const initialCameraPosition = new THREE.Vector3(0, 2 * AU * SIM_SCALE, 5 * AU * SIM_SCALE);
+        camera.position.copy(initialCameraPosition);
+        controls.update();
+
+        const ambientLight = new THREE.AmbientLight(0x333333);
+        scene.add(ambientLight);
+        const pointLight = new THREE.PointLight(0xFFFFFF, 2, 0);
+        scene.add(pointLight);
+        
+        const labelsContainer = document.getElementById('labels-container');
+        const infoPanel = document.getElementById('info-panel');
+
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        let targetBody = null;
+        let cameraTargetPosition = null;
+
+        const translations = {
+            'zh': {
+                desktopControls: "桌面:",
+                desktopControlsText: "左鍵拖曳=旋轉 | 右鍵拖曳=平移 | 滾輪=縮放",
+                mobileControls: "行動裝置:",
+                mobileControlsText: "單指拖曳=旋轉 | 雙指拖曳=平移 | 雙指縮放",
+                speedLabel: "速度:",
+                pause: "暫停",
+                play: "播放",
+                reset: "重設",
+                showTrails: "顯示軌跡尾巴",
+                showOrbits: "顯示完整軌道",
+                showLabels: "顯示名稱",
+                selectBody: "選擇一個天體...",
+                didYouKnow: "你知道嗎？"
+            },
+            'en': {
+                desktopControls: "Desktop:",
+                desktopControlsText: "Left Drag=Rotate | Right Drag=Pan | Scroll=Zoom",
+                mobileControls: "Mobile:",
+                mobileControlsText: "One Finger Drag=Rotate | Two Finger=Pan/Zoom",
+                speedLabel: "Speed:",
+                pause: "Pause",
+                play: "Play",
+                reset: "Reset",
+                showTrails: "Show Trails",
+                showOrbits: "Show Full Orbits",
+                showLabels: "Show Labels",
+                selectBody: "Select a body...",
+                didYouKnow: "Did you know?"
+            }
+        };
+
+        class Body {
+            constructor(name, x, y, z, radius, color, mass, vx = 0, vy = 0, vz = 0, orbitFadeFactor = 1, facts, axialTilt = 0) {
+                this.name = name; // This will be updated on language change
+                this.baseName = name; // A permanent English name for identification
+                this.x = x; this.y = y; this.z = z;
+                this.mass = mass;
+                this.vx = vx; this.vy = vy; this.vz = vz;
+                this.orbitFadeFactor = orbitFadeFactor;
+                this.facts = facts;
+                
+                const geometry = new THREE.SphereGeometry(radius, 32, 32);
+                const material = new THREE.MeshStandardMaterial({ color: color });
+                if (name === "Sun") {
+                    material.emissive = new THREE.Color(color);
+                    material.emissiveIntensity = 1;
+                }
+                this.mesh = new THREE.Mesh(geometry, material);
+                this.mesh.userData.body = this;
+                this.mesh.rotation.x = axialTilt * Math.PI / 180;
+                this.mesh.position.set(x * SIM_SCALE, y * SIM_SCALE, z * SIM_SCALE);
+                scene.add(this.mesh);
+
+                if (name === "Saturn") {
+                    const ringGeometry = new THREE.RingGeometry(radius * 1.5, radius * 2.5, 64);
+                    const pos = ringGeometry.attributes.position;
+                    const v3 = new THREE.Vector3();
+                    for (let i = 0; i < pos.count; i++){
+                        v3.fromBufferAttribute(pos, i);
+                        ringGeometry.attributes.uv.setXY(i, v3.length() < radius * 2 ? 0 : 1, 1);
+                    }
+                    const ringMaterial = new THREE.MeshBasicMaterial({ color: 0xaaaaaa, side: THREE.DoubleSide, transparent: true, opacity: 0.6 });
+                    this.ring = new THREE.Mesh(ringGeometry, ringMaterial);
+                    this.ring.rotation.x = Math.PI / 2;
+                    this.mesh.add(this.ring);
+                }
+
+                this.orbitPoints = [];
+                const orbitMaterial = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true });
+                const orbitGeometry = new THREE.BufferGeometry();
+                this.orbitLine = new THREE.Line(orbitGeometry, orbitMaterial);
+                scene.add(this.orbitLine);
+                
+                this.fullOrbitLine = null;
+
+                this.labelElement = null;
+                if (name !== "Sun") {
+                    this.labelElement = document.createElement('div');
+                    this.labelElement.className = 'label';
+                    this.labelElement.textContent = this.name;
+                    labelsContainer.appendChild(this.labelElement);
+                }
+            }
+
+            attraction(other) {
+                const distanceX = other.x - this.x;
+                const distanceY = other.y - this.y;
+                const distanceZ = other.z - this.z;
+                const distance = Math.sqrt(distanceX**2 + distanceY**2 + distanceZ**2);
+                if (distance === 0) return { fx: 0, fy: 0, fz: 0 };
+                const force = G * this.mass * other.mass / distance**2;
+                const theta = Math.atan2(distanceY, distanceX);
+                const phi = Math.acos(distanceZ / distance);
+                return {
+                    fx: Math.cos(theta) * Math.sin(phi) * force,
+                    fy: Math.sin(theta) * Math.sin(phi) * force,
+                    fz: Math.cos(phi) * force
+                };
+            }
+
+            updatePosition(allBodies) {
+                if (isPaused) return;
+
+                const dynamicSteps = Math.ceil(BASE_CALCULATION_STEPS * timeMultiplier);
+                const calculationSteps = Math.min(MAX_CALCULATION_STEPS, dynamicSteps);
+                const subTimeStep = (BASE_TIMESTEP * timeMultiplier) / calculationSteps;
+
+                for (let i = 0; i < calculationSteps; i++) {
+                    let totalFx = 0, totalFy = 0, totalFz = 0;
+                    for (const otherBody of allBodies) {
+                        if (this === otherBody) continue;
+                        const { fx, fy, fz } = this.attraction(otherBody);
+                        totalFx += fx; totalFy += fy; totalFz += fz;
+                    }
+                    this.vx += totalFx / this.mass * subTimeStep;
+                    this.vy += totalFy / this.mass * subTimeStep;
+                    this.vz += totalFz / this.mass * subTimeStep;
+                    this.x += this.vx * subTimeStep;
+                    this.y += this.vy * subTimeStep;
+                    this.z += this.vz * subTimeStep;
+                }
+
+                this.mesh.position.set(this.x * SIM_SCALE, this.y * SIM_SCALE, this.z * SIM_SCALE);
+
+                if (this.baseName !== "Sun") {
+                    this.orbitPoints.push(new THREE.Vector3(this.mesh.position.x, this.mesh.position.y, this.mesh.position.z));
+                    const maxOrbitLength = Math.max(50, (BASE_ORBIT_LENGTH / this.orbitFadeFactor) / timeMultiplier);
+                    if (this.orbitPoints.length > maxOrbitLength) this.orbitPoints.shift();
+                    this.orbitLine.geometry.setFromPoints(this.orbitPoints);
+                    
+                    const colors = [];
+                    const color = new THREE.Color(this.mesh.material.color.getHex());
+                    for(let i = 0; i < this.orbitPoints.length; i++) {
+                        colors.push(color.r, color.g, color.b, i / this.orbitPoints.length);
+                    }
+                    this.orbitLine.geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
+                }
+            }
+            
+            updateLabelPosition() {
+                if (!this.labelElement) return;
+                const position = new THREE.Vector3();
+                this.mesh.getWorldPosition(position);
+                position.project(camera);
+                const isBehind = position.z > 1;
+                if (isBehind) {
+                    this.labelElement.style.display = 'none';
+                } else {
+                    this.labelElement.style.display = 'block';
+                    const x = (position.x * .5 + .5) * renderer.domElement.clientWidth;
+                    const y = (position.y * -.5 + .5) * renderer.domElement.clientHeight;
+                    this.labelElement.style.transform = `translate(-50%, -150%) translate(${x}px, ${y}px)`;
+                }
+            }
+        }
+
+        function createRealisticStarryBackground(toRad) {
+            const fieldStarCount = isMobile ? 5000 : 20000;
+            const galaxyStarCount = isMobile ? 10000 : 40000;
+            const sphereRadius = 1000 * AU * SIM_SCALE;
+            const positions = [], colors = [];
+            for (let i = 0; i < fieldStarCount; i++) {
+                const u = Math.random(), v = Math.random();
+                const theta = 2 * Math.PI * u, phi = Math.acos(2 * v - 1);
+                positions.push(sphereRadius * Math.sin(phi) * Math.cos(theta), sphereRadius * Math.sin(phi) * Math.sin(theta), sphereRadius * Math.cos(phi));
+                const color = new THREE.Color();
+                const brightness = Math.random() * 0.5 + 0.5;
+                color.setRGB(brightness, brightness, brightness);
+                colors.push(color.r, color.g, color.b);
+            }
+            const galaxyDiscThickness = 50 * AU * SIM_SCALE;
+            const galaxyRadius = sphereRadius;
+            for (let i = 0; i < galaxyStarCount; i++) {
+                const angle = Math.random() * 2 * Math.PI;
+                const radius = Math.sqrt(Math.random()) * galaxyRadius;
+                const x = radius * Math.cos(angle);
+                const y = (Math.random() - 0.5) * galaxyDiscThickness;
+                const z = radius * Math.sin(angle);
+                const tiltAngle = toRad(25);
+                const rotatedY = y * Math.cos(tiltAngle) - z * Math.sin(tiltAngle);
+                const rotatedZ = y * Math.sin(tiltAngle) + z * Math.cos(tiltAngle);
+                positions.push(x, rotatedY, rotatedZ);
+                const color = new THREE.Color();
+                const brightness = Math.random() * 0.3 + 0.7;
+                color.setHSL(0.55 + Math.random() * 0.1, 0.8, brightness);
+                colors.push(color.r, color.g, color.b);
+            }
+            const starGeometry = new THREE.BufferGeometry();
+            starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            starGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            const starMaterial = new THREE.PointsMaterial({ size: 1.5, vertexColors: true, sizeAttenuation: true, transparent: true, opacity: 0.8 });
+            return new THREE.Points(starGeometry, starMaterial);
+        }
+
+        function createFullOrbit(bodyData, sunMass, toRad) {
+            if (bodyData.name === "Sun" || bodyData.e >= 1) return null;
+            const points = [];
+            const segments = 360;
+            for (let i = 0; i <= segments; i++) {
+                const M = (i / segments) * 2 * Math.PI;
+                let E = M;
+                for(let j=0; j<5; j++) E = M + bodyData.e * Math.sin(E);
+                const trueAnomaly = 2 * Math.atan2(Math.sqrt(1 + bodyData.e) * Math.sin(E / 2), Math.sqrt(1 - bodyData.e) * Math.cos(E / 2));
+                const dist = bodyData.a * (1 - bodyData.e * Math.cos(E));
+                
+                let posVec = new THREE.Vector3(dist * Math.cos(trueAnomaly), dist * Math.sin(trueAnomaly), 0);
+                posVec.applyAxisAngle(new THREE.Vector3(0, 0, 1), toRad(bodyData.aop));
+                posVec.applyAxisAngle(new THREE.Vector3(1, 0, 0), toRad(bodyData.i));
+                posVec.applyAxisAngle(new THREE.Vector3(0, 0, 1), toRad(bodyData.lan));
+                points.push(posVec.multiplyScalar(SIM_SCALE));
+            }
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const material = new THREE.LineBasicMaterial({ color: bodyData.color, transparent: true, opacity: 0.5 });
+            const line = new THREE.Line(geometry, material);
+            line.visible = false;
+            return line;
+        }
+
+        let bodies = [];
+        let planetData = [];
+
+        function init() {
+            for (const body of bodies) {
+                scene.remove(body.mesh);
+                scene.remove(body.orbitLine);
+                scene.remove(body.fullOrbitLine);
+                if (body.labelElement) labelsContainer.removeChild(body.labelElement);
+            }
+            const oldStars = scene.getObjectByName("stars");
+            if (oldStars) scene.remove(oldStars);
+            
+            bodies = [];
+            const toRad = (deg) => deg * Math.PI / 180;
+            const stars = createRealisticStarryBackground(toRad);
+            stars.name = "stars";
+            scene.add(stars);
+
+            MAX_CALCULATION_STEPS = isMobile ? 2000 : 4000;
+
+            const sunMass = 1.9885e30;
+            // --- FIX: Restructure planet data with language keys ---
+            planetData = [
+                { name: "Sun", radius: 0.2 * AU, color: 0xFFFF00, mass: sunMass, facts_zh: { name: "太陽", f1: "分類: G型主序星", f2: "直徑: 1,392,700 公里", fun: "太陽的質量約佔整個太陽系的99.86%。" }, facts_en: { name: "Sun", f1: "Type: G-type main-sequence star", f2: "Diameter: 1,392,700 km", fun: "The Sun accounts for about 99.86% of the total mass of the Solar System." } },
+                { name: "Mercury", a: 0.387*AU, e: 0.205, i: 7.0, lan: 48.3, aop: 29.1, radius: 4.8e6 * 500, color: 0xFFA500, mass: 3.30e23, orbitFadeFactor: 4, facts_zh: { name: "水星", f1: "分類: 類地行星", f2: "一天長度: 176 個地球日", fun: "水星是太陽系中溫差最大的行星，從-173°C到427°C。" }, facts_en: { name: "Mercury", f1: "Type: Terrestrial planet", f2: "Day length: 176 Earth days", fun: "Mercury has the largest temperature variation in the Solar System, from -173°C to 427°C." } },
+                { name: "Venus", a: 0.723*AU, e: 0.007, i: 3.4, lan: 76.7, aop: 54.9, radius: 1.2e7 * 500, color: 0xFFFFFF, mass: 4.8685e24, orbitFadeFactor: 3, facts_zh: { name: "金星", f1: "分類: 類地行星", f2: "表面溫度: 462 °C", fun: "金星是太陽系中最熱的行星，而且它的自轉方向與大多數行星相反。" }, facts_en: { name: "Venus", f1: "Type: Terrestrial planet", f2: "Surface temp: 462 °C", fun: "Venus is the hottest planet in the solar system and rotates in the opposite direction to most planets." } },
+                { name: "Earth", a: 1*AU, e: 0.017, i: 0.0, lan: -11.2, aop: 114.2, radius: 1.27e7 * 500, color: 0x6495ED, mass: 5.972e24, orbitFadeFactor: 2, facts_zh: { name: "地球", f1: "分類: 類地行星", f2: "人口: 約 80 億", fun: "地球是目前已知唯一存在生命的行星。" }, facts_en: { name: "Earth", f1: "Type: Terrestrial planet", f2: "Population: ~8 Billion", fun: "Earth is the only known planet to harbor life." } },
+                { name: "Mars", a: 1.524*AU, e: 0.093, i: 1.85, lan: 49.6, aop: 286.5, radius: 6.7e6 * 500, color: 0xBC2732, mass: 6.39e23, orbitFadeFactor: 1.5, facts_zh: { name: "火星", f1: "分類: 類地行星", f2: "最高山峰: 奧林帕斯山 (21.9公里)", fun: "火星擁有太陽系中最大的火山和最長的峽谷。" }, facts_en: { name: "Mars", f1: "Type: Terrestrial planet", f2: "Highest mountain: Olympus Mons (21.9 km)", fun: "Mars has the largest volcano and the longest canyon in the Solar System." } },
+                { name: "Jupiter", a: 5.204*AU, e: 0.048, i: 1.3, lan: 100.5, aop: 273.8, radius: 1.4e8 * 50, color: 0xD2B48C, mass: 1.898e27, orbitFadeFactor: 1, facts_zh: { name: "木星", f1: "分類: 氣態巨行星", f2: "衛星數量: 95", fun: "木星著名的大紅斑是一個已經持續了數百年的巨大風暴。" }, facts_en: { name: "Jupiter", f1: "Type: Gas giant", f2: "Moons: 95", fun: "Jupiter's Great Red Spot is a giant storm that has been raging for hundreds of years." } },
+                { name: "Saturn", a: 9.582*AU, e: 0.056, i: 2.5, lan: 113.7, aop: 339.4, radius: 1.2e8 * 50, color: 0xFFFFE0, mass: 5.683e26, orbitFadeFactor: 1, facts_zh: { name: "土星", f1: "分類: 氣態巨行星", f2: "主要成分: 氫、氦", fun: "土星的密度非常低，如果能找到足夠大的浴缸，它會浮在水上。" }, facts_en: { name: "Saturn", f1: "Type: Gas giant", f2: "Main composition: Hydrogen, Helium", fun: "Saturn is so low in density that it would float in a bathtub large enough to hold it." } },
+                { name: "Uranus", a: 19.201*AU, e: 0.046, i: 0.77, lan: 74.0, aop: 98.9, radius: 5.1e7 * 50, color: 0xADD8E6, mass: 8.681e25, orbitFadeFactor: 1, facts_zh: { name: "天王星", f1: "分類: 冰巨行星", f2: "自轉軸傾角: 97.77°", fun: "天王星是「躺著」自轉的，它的自轉軸幾乎與軌道平面平行。" }, facts_en: { name: "Uranus", f1: "Type: Ice giant", f2: "Axial tilt: 97.77°", fun: "Uranus rotates on its side, with its axis almost parallel to its orbital plane." } },
+                { name: "Neptune", a: 30.047*AU, e: 0.009, i: 1.77, lan: 131.8, aop: 276.3, radius: 4.9e7 * 50, color: 0x00FFFF, mass: 1.024e26, orbitFadeFactor: 1, facts_zh: { name: "海王星", f1: "分類: 冰巨行星", f2: "風速: > 2,000 公里/小時", fun: "海王星是太陽系中風速最強的行星。" }, facts_en: { name: "Neptune", f1: "Type: Ice giant", f2: "Wind speeds: > 2,000 km/h", fun: "Neptune has the strongest winds in the Solar System." } },
+                { name: "Pluto", a: 39.48*AU, e: 0.248, i: 17.16, lan: 110.3, aop: 113.8, radius: 2.3e6 * 500, color: 0xA9A9A9, mass: 1.309e22, orbitFadeFactor: 1, facts_zh: { name: "冥王星", f1: "分類: 矮行星", f2: "發現年份: 1930年", fun: "冥王星的軌道非常橢圓，有時會比海王星更靠近太陽。" }, facts_en: { name: "Pluto", f1: "Type: Dwarf planet", f2: "Discovered: 1930", fun: "Pluto's orbit is so elliptical that it is sometimes closer to the Sun than Neptune." } },
+                { name: "Halley's Comet", a: 17.834*AU, e: 0.967, i: 162.26, lan: 58.42, aop: 111.33, radius: 1.1e4 * 500, color: 0xADD8E6, mass: 2.2e14, orbitFadeFactor: 0.2, facts_zh: { name: "哈雷彗星", f1: "分類: 短週期彗星", f2: "公轉週期: 約 76 年", fun: "哈雷彗星是唯一能用肉眼看見的短週期彗星。" }, facts_en: { name: "Halley's Comet", f1: "Type: Short-period comet", f2: "Orbital period: ~76 years", fun: "Halley's Comet is the only short-period comet that is clearly visible to the naked eye from Earth." } },
+                { name: "Comet Encke", a: 2.21*AU, e: 0.848, i: 11.9, lan: 334.3, aop: 186.5, radius: 2.4e3 * 500, color: 0xFFFF99, mass: 8.1e12, orbitFadeFactor: 2, facts_zh: { name: "恩克彗星", f1: "分類: 短週期彗星", f2: "公轉週期: 約 3.3 年", fun: "恩克彗星是已知軌道週期第二短的彗星。" }, facts_en: { name: "Comet Encke", f1: "Type: Short-period comet", f2: "Orbital period: ~3.3 years", fun: "Comet Encke has the second-shortest orbital period of any known comet." } },
+                { name: "Hale-Bopp", a: 250*AU, e: 0.995, i: 89.4, lan: 282.4, aop: 135.5, radius: 3e4 * 500, color: 0x99FFFF, mass: 2.2e14, orbitFadeFactor: 0.1, facts_zh: { name: "海爾-波普彗星", f1: "分類: 長週期彗星", f2: "公轉週期: 約 2,533 年", fun: "海爾-波普彗星是20世紀觀測時間最長的彗星之一，長達18個月。" }, facts_en: { name: "Hale-Bopp", f1: "Type: Long-period comet", f2: "Orbital period: ~2,533 years", fun: "Comet Hale-Bopp was one of the most-observed comets of the 20th century, visible for 18 months." } }
+            ];
+
+            const planetSelect = document.getElementById('planetSelect');
+            planetSelect.innerHTML = '';
+
+            bodies = planetData.map(p => {
+                const facts = {
+                    'zh': { name: p.facts_zh.name, ...p.facts_zh },
+                    'en': { name: p.facts_en.name, ...p.facts_en }
+                };
+                
+                if (p.name === "Sun") return new Body(p.name, 0, 0, 0, p.radius * SIM_SCALE, p.color, p.mass, 0, 0, 0, 1, facts);
+                
+                const q = p.a * (1 - p.e);
+                const v = Math.sqrt(G * sunMass * (1 + p.e) / q);
+                let posVec = new THREE.Vector3(q, 0, 0);
+                let velVec = new THREE.Vector3(0, v, 0);
+                posVec.applyAxisAngle(new THREE.Vector3(0, 0, 1), toRad(p.aop));
+                velVec.applyAxisAngle(new THREE.Vector3(0, 0, 1), toRad(p.aop));
+                posVec.applyAxisAngle(new THREE.Vector3(1, 0, 0), toRad(p.i));
+                velVec.applyAxisAngle(new THREE.Vector3(1, 0, 0), toRad(p.i));
+                posVec.applyAxisAngle(new THREE.Vector3(0, 0, 1), toRad(p.lan));
+                velVec.applyAxisAngle(new THREE.Vector3(0, 0, 1), toRad(p.lan));
+                const body = new Body(p.name, posVec.x, posVec.y, posVec.z, p.radius * SIM_SCALE, p.color, p.mass, velVec.x, velVec.y, velVec.z, p.orbitFadeFactor, facts, p.axialTilt);
+                body.fullOrbitLine = createFullOrbit(p, sunMass, toRad);
+                if(body.fullOrbitLine) scene.add(body.fullOrbitLine);
+                return body;
+            });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (cameraTargetPosition) {
+                camera.position.lerp(cameraTargetPosition, 0.05);
+                if (camera.position.distanceTo(cameraTargetPosition) < 0.1 * SIM_SCALE) {
+                    cameraTargetPosition = null;
+                }
+            }
+            if (targetBody) {
+                const targetPosition = new THREE.Vector3();
+                targetBody.mesh.getWorldPosition(targetPosition);
+                controls.target.lerp(targetPosition, 0.05);
+            }
+            for (const body of bodies) {
+                body.updatePosition(bodies);
+                body.updateLabelPosition();
+            }
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        const speedSlider = document.getElementById('speedSlider');
+        const speedInput = document.getElementById('speedInput');
+        function updateSpeed(value) {
+            const speed = parseFloat(value);
+            if (isNaN(speed) || speed < 0.1) { return; }
+            timeMultiplier = speed;
+            speedSlider.value = speed;
+            speedInput.value = speed;
+        }
+        speedSlider.addEventListener('input', (event) => updateSpeed(event.target.value));
+        speedInput.addEventListener('input', (event) => updateSpeed(event.target.value));
+
+        const resetButton = document.getElementById('resetButton');
+        resetButton.addEventListener('click', () => {
+            init();
+            setLanguage(currentLanguage);
+            updateSpeed(1);
+            targetBody = bodies.find(b => b.baseName === "Sun");
+            controls.target.set(0,0,0);
+            cameraTargetPosition = initialCameraPosition.clone();
+        });
+
+        function focusOnBody(body) {
+            targetBody = body;
+            infoPanel.classList.add('visible');
+            document.getElementById('planetSelect').value = body.baseName;
+            updateInfoPanel(body);
+        }
+        
+        function updateInfoPanel(body) {
+            const lang = currentLanguage;
+            const facts = body.facts[lang];
+            document.getElementById('planet-name').textContent = facts.f1 ? `${facts.name} (${facts.f1})` : facts.name;
+            document.getElementById('planet-fact1').textContent = facts.f2;
+            document.getElementById('planet-fact2').textContent = facts.f3 || '';
+            document.getElementById('planet-fun-fact').textContent = `${translations[lang].didYouKnow} ${facts.fun}`;
+        }
+
+        window.addEventListener('click', (event) => {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(bodies.map(b => b.mesh));
+            if (intersects.length > 0) {
+                focusOnBody(intersects[0].object.userData.body);
+            }
+        });
+        
+        document.getElementById('close-panel-btn').addEventListener('click', () => {
+            infoPanel.classList.remove('visible');
+            targetBody = bodies.find(b => b.baseName === "Sun");
+            document.getElementById('planetSelect').value = "Sun";
+        });
+
+        document.getElementById('toggle-trails').addEventListener('change', (event) => {
+            bodies.forEach(b => b.orbitLine.visible = event.target.checked);
+        });
+        document.getElementById('toggle-labels').addEventListener('change', (event) => {
+            labelsContainer.style.display = event.target.checked ? 'block' : 'none';
+        });
+        document.getElementById('toggle-full-orbits').addEventListener('change', (event) => {
+            bodies.forEach(b => { if(b.fullOrbitLine) b.fullOrbitLine.visible = event.target.checked });
+        });
+
+        document.getElementById('planetSelect').addEventListener('change', (event) => {
+            const selectedBody = bodies.find(b => b.baseName === event.target.value);
+            if (selectedBody) focusOnBody(selectedBody);
+        });
+        
+        const pausePlayButton = document.getElementById('pausePlayButton');
+        pausePlayButton.addEventListener('click', () => {
+            isPaused = !isPaused;
+            pausePlayButton.textContent = isPaused ? translations[currentLanguage].play : translations[currentLanguage].pause;
+        });
+        
+        let currentLanguage = 'zh';
+        const langZhBtn = document.getElementById('lang-zh');
+        const langEnBtn = document.getElementById('lang-en');
+
+        function setLanguage(lang) {
+            currentLanguage = lang;
+            document.documentElement.lang = lang === 'zh' ? 'zh-Hant' : 'en';
+
+            langZhBtn.classList.toggle('active', lang === 'zh');
+            langEnBtn.classList.toggle('active', lang === 'en');
+
+            document.querySelectorAll('[data-lang]').forEach(el => {
+                const key = el.getAttribute('data-lang');
+                if (translations[lang][key]) {
+                    el.textContent = translations[lang][key];
+                }
+            });
+            
+            const planetSelect = document.getElementById('planetSelect');
+            const currentSelection = planetSelect.value;
+            planetSelect.innerHTML = `<option value="Sun">${translations[lang].selectBody}</option>`;
+            
+            bodies.forEach(body => {
+                const bodyName = body.facts[lang].name;
+                body.name = bodyName;
+                if (body.labelElement) {
+                    body.labelElement.textContent = bodyName;
+                }
+                const option = document.createElement('option');
+                option.value = body.baseName;
+                option.textContent = bodyName;
+                planetSelect.appendChild(option);
+            });
+            planetSelect.value = currentSelection;
+            
+            if (infoPanel.classList.contains('visible') && targetBody) {
+                updateInfoPanel(targetBody);
+            }
+        }
+        
+        langZhBtn.addEventListener('click', () => setLanguage('zh'));
+        langEnBtn.addEventListener('click', () => setLanguage('en'));
+        
+        init();
+        setLanguage('zh');
+        targetBody = bodies.find(b => b.baseName === "Sun");
+        animate();
+    </script>
+</body>
+</html>
